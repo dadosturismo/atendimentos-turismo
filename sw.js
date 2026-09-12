@@ -1,4 +1,4 @@
-const CACHE = 'atendimentos-pwa-v18';
+const CACHE = 'atendimentos-pwa-v19';
 const ARQUIVOS = ['./','./index.html','./app.js','./manifest.webmanifest','./icon.svg'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARQUIVOS)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
