@@ -1,5 +1,5 @@
 /* Configure os dois valores abaixo antes de publicar. */
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbx0RehqFX0xhbjbpXBFaWUDVG1n8YkjAsWqL8I6tVP0MnOfjWR51XUhLRteXzUvl8LG/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwZX8mZymRouTSw9WRYV7PEl7sXD9sx4rci0auzZ5nen0e87mmJ6q3WuBSU4g3jJDPJ/exec';
 const DB = 'turismo-atendimentos-v1', STORE = 'pendentes', OPT = 'opcoes';
 const $ = id => document.getElementById(id); let options, busy = false;
 const db = new Promise((resolve,reject)=>{const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{r.result.createObjectStore(STORE,{keyPath:'idEnvio'});r.result.createObjectStore(OPT);};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
