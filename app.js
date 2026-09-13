@@ -120,22 +120,26 @@ function unlockName() {
 
 function configureOrigin() {
   const type = selected("attendanceType");
-  const nationality = selected("nationality");
   const cityRegion = type === "Curitiba e Região Metropolitana";
   const visitor = type === "Visitante";
+  let nationality = selected("nationality");
+
+  if (cityRegion) {
+    document.querySelector('input[name="nationality"][value="Brasileiro"]').checked = true;
+    nationality = "Brasileiro";
+    $("countrySearch").value = "";
+    populateCountries();
+    $("country").value = "Brasil";
+    $("state").value = "Paraná";
+    $("automaticOrigin").textContent = "Origem definida automaticamente: Brasil · Paraná.";
+  }
+
   const brazilian = nationality === "Brasileiro";
   const foreign = nationality === "Estrangeiro";
 
   show($("nationalityField"), visitor);
   show($("originFields"), visitor && Boolean(nationality));
   show($("automaticOrigin"), cityRegion);
-
-  if (cityRegion) {
-    document.querySelector('input[name="nationality"][value="Brasileiro"]').checked = true;
-    $("country").value = "Brasil";
-    $("state").value = "Paraná";
-    $("automaticOrigin").textContent = "Origem definida automaticamente: Brasil · Paraná.";
-  }
 
   show($("countrySearch"), foreign);
   show($("stateField"), cityRegion || brazilian);
@@ -144,8 +148,12 @@ function configureOrigin() {
   $("country").disabled = !visitor || !nationality || brazilian;
   $("state").disabled = !(cityRegion || brazilian);
 
-  if (brazilian) $("country").value = "Brasil";
-  if (!visitor) {
+  if (brazilian) {
+    $("countrySearch").value = "";
+    populateCountries();
+    $("country").value = "Brasil";
+  }
+  if (!visitor && !cityRegion) {
     $("countrySearch").value = "";
     $("country").value = "";
     $("state").value = "";
@@ -378,7 +386,9 @@ $("attraction").addEventListener("change", configureAttraction);
 $("name").addEventListener("blur", () => { lockName(); updateSaveButton(); });
 $("countrySearch").addEventListener("input", () => populateCountries($("countrySearch").value));
 $("information").addEventListener("change", () => {
-  show($("otherField"), $("information").value === "Outros");
+  const isOther = $("information").value === "Outros";
+  show($("otherField"), isOther);
+  if (!isOther) $("otherInformation").value = "";
   updateSaveButton();
 });
 
