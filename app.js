@@ -9,6 +9,7 @@ let options;
 let syncing = false;
 let savedAttraction = "";
 let retryTimer;
+let editingIdentification = false;
 
 const db = new Promise((resolve, reject) => {
   const request = indexedDB.open(DB_NAME, 3);
@@ -105,17 +106,33 @@ function show(element, visible) {
   element.classList.toggle("hidden", !visible);
 }
 
+function identificationIsComplete() {
+  return Boolean($("name").value.trim() && currentAttraction());
+}
+
+function renderIdentification() {
+  const collapsed = identificationIsComplete() && !editingIdentification;
+  show($("identificationFields"), !collapsed);
+  show($("identificationSummary"), collapsed);
+
+  if (collapsed) {
+    $("summaryAttraction").textContent = $("attraction").value;
+    $("summaryName").textContent = $("name").value.trim();
+    $("attraction").disabled = true;
+    $("name").readOnly = true;
+    return;
+  }
+
+  $("attraction").disabled = !options;
+  $("name").readOnly = false;
+}
+
 function lockName() {
   const name = $("name");
   if (!name.value.trim()) return;
-  name.readOnly = true;
-  name.classList.add("saved");
   writeValue(PREFERENCES_STORE, name.value.trim(), "nome");
-}
-
-function unlockName() {
-  $("name").readOnly = false;
-  $("name").classList.remove("saved");
+  if (currentAttraction()) editingIdentification = false;
+  renderIdentification();
 }
 
 function configureOrigin() {
@@ -165,18 +182,19 @@ function configureAttraction() {
   const config = currentAttraction();
   if (!config) {
     $("information").disabled = true;
+    renderIdentification();
     updateSaveButton();
     return;
   }
 
-  $("attraction").disabled = true;
-  show($("changeAttraction"), true);
   populateInformation(config);
   $("information").disabled = false;
   show($("groupField"), config.permiteGrupo);
   $("groupSize").required = config.permiteGrupo;
   savedAttraction = $("attraction").value;
   writeValue(PREFERENCES_STORE, $("attraction").value, "atrativo");
+  if ($("name").value.trim()) editingIdentification = false;
+  renderIdentification();
   configureOrigin();
   updateSaveButton();
 }
@@ -192,6 +210,8 @@ function renderOptions() {
   if (options.atrativos[attractionToRestore]) {
     $("attraction").value = attractionToRestore;
     configureAttraction();
+  } else {
+    renderIdentification();
   }
 }
 
@@ -337,8 +357,8 @@ function formData() {
 
 function resetForNextAttendance(name, attraction) {
   $("form").reset();
+  editingIdentification = false;
   $("name").value = name;
-  lockName();
   $("attraction").value = attraction;
   configureAttraction();
   $("countrySearch").value = "";
@@ -364,21 +384,13 @@ $("form").addEventListener("submit", async (event) => {
     resetForNextAttendance(data.nome, data.atrativo);
     $("successScreen").classList.add("hidden");
     $("formScreen").classList.remove("hidden");
-    $("information").focus();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 });
 
-$("changeName").addEventListener("click", async () => {
-  $("name").value = "";
-  unlockName();
-  await writeValue(PREFERENCES_STORE, "", "nome");
-  $("name").focus();
-  updateSaveButton();
-});
-
-$("changeAttraction").addEventListener("click", () => {
-  $("attraction").disabled = false;
-  show($("changeAttraction"), false);
+$("changeIdentification").addEventListener("click", () => {
+  editingIdentification = true;
+  renderIdentification();
   $("attraction").focus();
 });
 
