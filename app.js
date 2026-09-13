@@ -1,11 +1,408 @@
-const GAS_URL='https://script.google.com/macros/s/AKfycbzB6GSofhvuFJhuml3XjhSjb1z8nmAogVMSnEVC58LWhdm1giwMrQ9ZLHLfGmKbrGAb/exec',DB='turismo-atendimentos-v2',S='pendentes',O='opcoes',P='preferencias';const $=x=>document.getElementById(x);let op,busy=false;
-$('form').addEventListener('submit',()=>document.querySelectorAll('#telaSucesso button').forEach(botao=>botao.remove()),true);
-function bloquearNome(){if($('nome').value.trim()){$('nome').readOnly=true;$('nome').classList.add('nome-salvo')}}function atualizarBotao(){let c=cfg(),t=sel('tipo'),n=sel('nac'),grupo=+$('grupo').value,pronto=!!(c&&$('nome').value.trim()&&t&&n&&$('pais').value&&$('info').value&&((t!=='Curitiba e Região Metropolitana'&&n!=='Brasileiro')||$('estado').value)&&($('info').value!=='Outros'||$('outro').value.trim())&&(!c.permiteGrupo||(Number.isInteger(grupo)&&grupo>=1&&grupo<=100)));$('save').disabled=!pronto}$('nome').addEventListener('blur',bloquearNome);$('alterarNome').addEventListener('click',()=>{$('nome').readOnly=false;$('nome').classList.remove('nome-salvo')});document.addEventListener('input',atualizarBotao);document.addEventListener('change',atualizarBotao);setInterval(atualizarBotao,250);
-// Usa o canal de opções da versão anterior, que já funcionava nesta PWA.
-async function refresh(){try{op=(await rpc('opcoes',{})).opcoes;await put(O,op,'atual');render()}catch(e){if(!op)msg('Sem opções locais. Conecte este dispositivo uma vez à internet.',true)}}
-const db=new Promise((ok,no)=>{let r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{r.result.createObjectStore(S,{keyPath:'idEnvio'});r.result.createObjectStore(O);r.result.createObjectStore(P)};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});async function tx(n,m,f){let d=await db,t=d.transaction(n,m),s=t.objectStore(n),v=f(s);return new Promise((ok,no)=>{t.oncomplete=()=>ok(v);t.onerror=()=>no(t.error)})}const get=(n,k)=>tx(n,'readonly',s=>new Promise(ok=>{let r=s.get(k);r.onsuccess=()=>ok(r.result)})),put=(n,x,k)=>tx(n,'readwrite',s=>s.put(x,k)),all=()=>tx(S,'readonly',s=>new Promise(ok=>{let r=s.getAll();r.onsuccess=()=>ok(r.result||[])})),del=id=>tx(S,'readwrite',s=>s.delete(id));
-function sel(n){return document.querySelector(`input[name="${n}"]:checked`)?.value||''}function msg(t,e){$('msg').textContent=t||'';$('msg').className='mensagem '+(e?'erro':'')}function fill(e,a,first){e.replaceChildren(new Option(first,''));a.forEach(x=>e.add(new Option(x,x)))}function info(c){let e=$('info');e.replaceChildren(new Option('Selecione a informação',''));[['Principais',c.principais],['Outros',c.outros]].forEach(([n,a])=>{let g=document.createElement('optgroup');g.label=n;a.forEach(x=>g.append(new Option(x,x)));e.append(g)})}
-function cfg(){return op?.atrativos?.[$('atrativo').value]}function render(){if(!op)return;fill($('atrativo'),Object.keys(op.atrativos),'Selecione o atrativo');$('atrativo').disabled=false;let a=localStorage.getItem('atrativo');if(a&&op.atrativos[a])$('atrativo').value=a;fill($('pais'),op.paises,'Selecione o país');fill($('estado'),op.estados,'Selecione o estado');changeAt();$('save').disabled=false}function changeAt(){let c=cfg();if(!c)return;$('atrativo').disabled=true;$('alterarAtrativo').classList.remove('oculto');info(c);$('info').disabled=false;$('grupoBox').classList.toggle('oculto',!c.permiteGrupo);$('grupo').required=!!c.permiteGrupo;localStorage.setItem('atrativo',$('atrativo').value);adjust()}function adjust(){let t=sel('tipo'),n=sel('nac'),cur=t==='Curitiba e Região Metropolitana';if(cur)document.querySelector('input[name="nac"][value="Brasileiro"]').checked=true;n=sel('nac');$('pais').disabled=!op||!t||!n||cur||n==='Brasileiro';if(cur||n==='Brasileiro')$('pais').value='Brasil';$('estado').disabled=!op||!(cur||n==='Brasileiro')||cur;if(cur)$('estado').value='Paraná';if(!(cur||n==='Brasileiro'))$('estado').value='';$('outroBox').classList.toggle('oculto',$('info').value!=='Outros')}
-function b64(x){let s='';new TextEncoder().encode(JSON.stringify(x)).forEach(b=>s+=String.fromCharCode(b));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}function rpc(action,payload){return new Promise((ok,no)=>{if(!navigator.onLine)return no(Error('Sem conexão'));let nonce=crypto.randomUUID().replace(/-/g,''),timer=setTimeout(()=>{off();no(Error('Sem resposta'))},30000);function off(){clearTimeout(timer);removeEventListener('message',receive)}function receive(e){let r=e.data?.resposta;if(e.data?.tipo!=='atendimento-pwa'||r?.nonce!==nonce)return;off();r.sucesso?ok(r):no(Error(r.erro))}addEventListener('message',receive);let f=document.createElement('form');f.method='POST';f.action=GAS_URL;f.target='bridge';[['action',action],['payload',b64(payload||{})],['origin',location.origin],['nonce',nonce]].forEach(([n,v])=>{let i=document.createElement('input');i.type='hidden';i.name=n;i.value=v;f.append(i)});document.body.append(f);f.submit();f.remove()})}
-function carregarOpcoes(){return new Promise((ok,no)=>{let cb='opcoesPwa_'+Date.now();let timer=setTimeout(()=>{delete window[cb];no(Error('Sem resposta'))},15000);window[cb]=r=>{clearTimeout(timer);delete window[cb];s.remove();r.sucesso?ok(r.opcoes):no(Error(r.erro))};let s=document.createElement('script');s.src=GAS_URL+'?api=opcoes&callback='+cb;s.onerror=()=>{clearTimeout(timer);delete window[cb];no(Error('Falha ao carregar opções'))};document.head.append(s)})}async function refreshJson(){try{op=await carregarOpcoes();await put(O,op,'atual');render()}catch(e){if(!op)msg('Sem opções locais. Conecte este dispositivo uma vez à internet.',true)}}async function count(){$('pending').textContent='Pendentes: '+(await all()).length}function net(){$('network').textContent=navigator.onLine?'● Online':'● Offline';$('network').className=navigator.onLine?'online':'offline'}async function sync(){if(busy||!navigator.onLine)return;busy=true;for(let x of await all())try{await rpc('sincronizar',x);await del(x.idEnvio)}catch(e){break}busy=false;count()}
-function id(){return crypto.randomUUID().replace(/-/g,'')}$('form').onsubmit=async e=>{e.preventDefault();let t=sel('tipo'),n=sel('nac'),c=cfg(),d={idEnvio:id(),criadoEm:new Date().toISOString(),atrativo:$('atrativo').value,nome:$('nome').value.trim(),tipoAtendimento:t,nacionalidade:n,paisOrigem:$('pais').value,estadoOrigem:$('estado').value,informacao:$('info').value,informacaoOutro:$('outro').value.trim(),quantidadeGrupo:$('grupo').value,observacoes:$('obs').value.trim()};if(!d.atrativo||!d.nome||!t||!n||!d.paisOrigem||!d.informacao||((t==='Curitiba e Região Metropolitana'||n==='Brasileiro')&&!d.estadoOrigem)||(d.informacao==='Outros'&&!d.informacaoOutro)||(c.permiteGrupo&&(+d.quantidadeGrupo<1||+d.quantidadeGrupo>100)))return msg('Preencha todos os campos obrigatórios.',true);await put(S,d);await put(P,d.nome,'nome');$('telaFormulario').classList.add('oculto');$('telaSucesso').classList.remove('oculto');let painel=$('telaSucesso').querySelector('div');painel.innerHTML='<strong>✓</strong><h2>Atendimento salvo neste dispositivo</h2><p>O registro será sincronizado automaticamente.</p><button type="button" id="novoAtendimento">Registrar novo atendimento</button>';$('novoAtendimento').onclick=()=>{$('form').reset();$('nome').value=d.nome;$('atrativo').value=d.atrativo;changeAt();$('telaSucesso').classList.add('oculto');$('telaFormulario').classList.remove('oculto');$('nome').focus()};count();sync()};$('alterarNome').onclick=async()=>{$('nome').value='';await put(P,'','nome');$('nome').focus()};$('alterarAtrativo').onclick=()=>{$('atrativo').disabled=false;$('alterarAtrativo').classList.add('oculto');$('atrativo').focus()};$('atrativo').onchange=changeAt;document.querySelectorAll('input[name="tipo"],input[name="nac"]').forEach(x=>x.onchange=adjust);$('info').onchange=()=>{$('outroBox').classList.toggle('oculto',$('info').value!=='Outros')};addEventListener('online',()=>{net();refresh();sync()});addEventListener('offline',net);(async()=>{navigator.serviceWorker?.register('./sw.js');net();$('nome').value=await get(P,'nome')||'';op=await get(O,'atual');render();count();refresh();sync()})();
+const GAS_URL = "https://script.google.com/macros/s/AKfycbzB6GSofhvuFJhuml3XjhSjb1z8nmAogVMSnEVC58LWhdm1giwMrQ9ZLHLfGmKbrGAb/exec";
+const DB_NAME = "turismo-atendimentos-v3";
+const QUEUE_STORE = "pendentes";
+const OPTIONS_STORE = "opcoes";
+const PREFERENCES_STORE = "preferencias";
+const $ = (id) => document.getElementById(id);
+
+let options;
+let syncing = false;
+let savedAttraction = "";
+let retryTimer;
+
+const db = new Promise((resolve, reject) => {
+  const request = indexedDB.open(DB_NAME, 3);
+  request.onupgradeneeded = () => {
+    const database = request.result;
+    if (!database.objectStoreNames.contains(QUEUE_STORE)) database.createObjectStore(QUEUE_STORE, { keyPath: "idEnvio" });
+    if (!database.objectStoreNames.contains(OPTIONS_STORE)) database.createObjectStore(OPTIONS_STORE);
+    if (!database.objectStoreNames.contains(PREFERENCES_STORE)) database.createObjectStore(PREFERENCES_STORE);
+  };
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+});
+
+async function readValue(storeName, key) {
+  const database = await db;
+  return new Promise((resolve, reject) => {
+    const request = database.transaction(storeName, "readonly").objectStore(storeName).get(key);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function writeValue(storeName, value, key) {
+  const database = await db;
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(storeName, "readwrite");
+    transaction.objectStore(storeName).put(value, key);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+}
+
+async function pendingRecords() {
+  const database = await db;
+  return new Promise((resolve, reject) => {
+    const request = database.transaction(QUEUE_STORE, "readonly").objectStore(QUEUE_STORE).getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function removePending(id) {
+  const database = await db;
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(QUEUE_STORE, "readwrite");
+    transaction.objectStore(QUEUE_STORE).delete(id);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+}
+
+function selected(name) {
+  return document.querySelector(`input[name="${name}"]:checked`)?.value || "";
+}
+
+function normalize(text) {
+  return String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function setMessage(text = "", isError = false) {
+  $("message").textContent = text;
+  $("message").classList.toggle("error", isError);
+}
+
+function currentAttraction() {
+  return options?.atrativos?.[$("attraction").value];
+}
+
+function populateSelect(element, values, placeholder) {
+  element.replaceChildren(new Option(placeholder, ""));
+  values.forEach((value) => element.add(new Option(value, value)));
+}
+
+function populateInformation(config) {
+  const select = $("information");
+  select.replaceChildren(new Option("Selecione a informação", ""));
+  [["Principais", config.principais], ["Outros", config.outros]].forEach(([label, values]) => {
+    const group = document.createElement("optgroup");
+    group.label = label;
+    values.forEach((value) => group.append(new Option(value, value)));
+    select.append(group);
+  });
+}
+
+function populateCountries(filter = "") {
+  const selectedCountry = $("country").value;
+  const text = normalize(filter);
+  const countries = (options?.paises || []).filter((country) => normalize(country).includes(text));
+  populateSelect($("country"), countries, countries.length ? "Selecione o país" : "Nenhum país encontrado");
+  if (countries.includes(selectedCountry)) $("country").value = selectedCountry;
+}
+
+function show(element, visible) {
+  element.classList.toggle("hidden", !visible);
+}
+
+function lockName() {
+  const name = $("name");
+  if (!name.value.trim()) return;
+  name.readOnly = true;
+  name.classList.add("saved");
+  writeValue(PREFERENCES_STORE, name.value.trim(), "nome");
+}
+
+function unlockName() {
+  $("name").readOnly = false;
+  $("name").classList.remove("saved");
+}
+
+function configureOrigin() {
+  const type = selected("attendanceType");
+  const nationality = selected("nationality");
+  const cityRegion = type === "Curitiba e Região Metropolitana";
+  const visitor = type === "Visitante";
+  const brazilian = nationality === "Brasileiro";
+  const foreign = nationality === "Estrangeiro";
+
+  show($("nationalityField"), visitor);
+  show($("originFields"), visitor && Boolean(nationality));
+  show($("automaticOrigin"), cityRegion);
+
+  if (cityRegion) {
+    document.querySelector('input[name="nationality"][value="Brasileiro"]').checked = true;
+    $("country").value = "Brasil";
+    $("state").value = "Paraná";
+    $("automaticOrigin").textContent = "Origem definida automaticamente: Brasil · Paraná.";
+  }
+
+  show($("countrySearch"), foreign);
+  show($("stateField"), cityRegion || brazilian);
+  show($("countryField"), visitor);
+
+  $("country").disabled = !visitor || !nationality || brazilian;
+  $("state").disabled = !(cityRegion || brazilian);
+
+  if (brazilian) $("country").value = "Brasil";
+  if (!visitor) {
+    $("countrySearch").value = "";
+    $("country").value = "";
+    $("state").value = "";
+  }
+  if (foreign) $("state").value = "";
+}
+
+function configureAttraction() {
+  const config = currentAttraction();
+  if (!config) {
+    $("information").disabled = true;
+    updateSaveButton();
+    return;
+  }
+
+  $("attraction").disabled = true;
+  show($("changeAttraction"), true);
+  populateInformation(config);
+  $("information").disabled = false;
+  show($("groupField"), config.permiteGrupo);
+  $("groupSize").required = config.permiteGrupo;
+  savedAttraction = $("attraction").value;
+  writeValue(PREFERENCES_STORE, $("attraction").value, "atrativo");
+  configureOrigin();
+  updateSaveButton();
+}
+
+function renderOptions() {
+  if (!options) return;
+  const attractionToRestore = $("attraction").value || savedAttraction;
+  populateSelect($("attraction"), Object.keys(options.atrativos), "Selecione o atrativo");
+  populateSelect($("state"), options.estados, "Selecione o estado");
+  populateCountries();
+  $("attraction").disabled = false;
+
+  if (options.atrativos[attractionToRestore]) {
+    $("attraction").value = attractionToRestore;
+    configureAttraction();
+  }
+}
+
+function updateSaveButton() {
+  const config = currentAttraction();
+  const type = selected("attendanceType");
+  const nationality = selected("nationality");
+  const cityRegion = type === "Curitiba e Região Metropolitana";
+  const brazilian = nationality === "Brasileiro";
+  const needsState = cityRegion || brazilian;
+  const groupSize = Number($("groupSize").value);
+  const ready = Boolean(
+    config &&
+    $("name").value.trim() &&
+    type &&
+    (cityRegion || nationality) &&
+    $("country").value &&
+    (!needsState || $("state").value) &&
+    $("information").value &&
+    ($("information").value !== "Outros" || $("otherInformation").value.trim()) &&
+    (!config.permiteGrupo || (Number.isInteger(groupSize) && groupSize >= 1 && groupSize <= 100))
+  );
+  $("save").disabled = !ready;
+}
+
+function encodePayload(data) {
+  let binary = "";
+  new TextEncoder().encode(JSON.stringify(data)).forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function rpc(action, payload) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.onLine) return reject(new Error("Sem conexão."));
+    const nonce = crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "") : `${Date.now()}${Math.random().toString(36).slice(2)}`;
+    const timeout = setTimeout(() => cleanup(new Error("O servidor não respondeu.")), 30000);
+
+    function receive(event) {
+      const response = event.data?.resposta;
+      if (event.data?.tipo !== "atendimento-pwa" || response?.nonce !== nonce) return;
+      cleanup();
+      response.sucesso ? resolve(response) : reject(new Error(response.erro || "Falha no servidor."));
+    }
+
+    function cleanup(error) {
+      clearTimeout(timeout);
+      window.removeEventListener("message", receive);
+      if (error) reject(error);
+    }
+
+    window.addEventListener("message", receive);
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = GAS_URL;
+    form.target = "bridge";
+    [["action", action], ["payload", encodePayload(payload || {})], ["origin", location.origin], ["nonce", nonce]].forEach(([name, value]) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      form.append(input);
+    });
+    document.body.append(form);
+    form.submit();
+    form.remove();
+  });
+}
+
+async function refreshOptions() {
+  try {
+    options = (await rpc("opcoes", {})).opcoes;
+    await writeValue(OPTIONS_STORE, options, "atual");
+    renderOptions();
+  } catch (error) {
+    if (!options) setMessage("Sem opções locais. Conecte este dispositivo uma vez à internet.", true);
+  }
+}
+
+async function updateStatus() {
+  const pending = await pendingRecords();
+  const online = navigator.onLine;
+  $("network").textContent = online ? "● Online" : "● Offline";
+  $("network").className = online ? "online" : "offline";
+  $("syncSummary").textContent = pending.length
+    ? `${pending.length} atendimento(s) aguardando sincronização`
+    : "Todos os atendimentos foram sincronizados";
+  show($("syncNow"), online && pending.length > 0);
+}
+
+function scheduleRetry() {
+  if (retryTimer || !navigator.onLine) return;
+  retryTimer = window.setTimeout(() => {
+    retryTimer = undefined;
+    synchronize();
+  }, 60000);
+}
+
+async function synchronize() {
+  if (syncing || !navigator.onLine) return;
+  if (retryTimer) {
+    window.clearTimeout(retryTimer);
+    retryTimer = undefined;
+  }
+  syncing = true;
+  let failed = false;
+  try {
+    for (const record of await pendingRecords()) {
+      try {
+        await rpc("sincronizar", record);
+        await removePending(record.idEnvio);
+      } catch {
+        failed = true;
+        break;
+      }
+    }
+  } finally {
+    syncing = false;
+    updateStatus();
+    if (failed) scheduleRetry();
+  }
+}
+
+function newId() {
+  return crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "") : `${Date.now()}${Math.random().toString(36).slice(2)}`;
+}
+
+function formData() {
+  return {
+    idEnvio: newId(),
+    criadoEm: new Date().toISOString(),
+    atrativo: $("attraction").value,
+    nome: $("name").value.trim(),
+    tipoAtendimento: selected("attendanceType"),
+    nacionalidade: selected("nationality"),
+    paisOrigem: $("country").value,
+    estadoOrigem: $("state").value,
+    informacao: $("information").value,
+    informacaoOutro: $("otherInformation").value.trim(),
+    quantidadeGrupo: $("groupSize").value,
+    observacoes: $("notes").value.trim()
+  };
+}
+
+function resetForNextAttendance(name, attraction) {
+  $("form").reset();
+  $("name").value = name;
+  lockName();
+  $("attraction").value = attraction;
+  configureAttraction();
+  $("countrySearch").value = "";
+  populateCountries();
+  setMessage();
+  updateSaveButton();
+}
+
+$("form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  updateSaveButton();
+  if ($("save").disabled) return setMessage("Preencha todos os campos obrigatórios.", true);
+
+  const data = formData();
+  await writeValue(QUEUE_STORE, data);
+  await writeValue(PREFERENCES_STORE, data.nome, "nome");
+  $("formScreen").classList.add("hidden");
+  $("successScreen").classList.remove("hidden");
+  updateStatus();
+  synchronize();
+
+  $("newAttendance").onclick = () => {
+    resetForNextAttendance(data.nome, data.atrativo);
+    $("successScreen").classList.add("hidden");
+    $("formScreen").classList.remove("hidden");
+    $("information").focus();
+  };
+});
+
+$("changeName").addEventListener("click", async () => {
+  $("name").value = "";
+  unlockName();
+  await writeValue(PREFERENCES_STORE, "", "nome");
+  $("name").focus();
+  updateSaveButton();
+});
+
+$("changeAttraction").addEventListener("click", () => {
+  $("attraction").disabled = false;
+  show($("changeAttraction"), false);
+  $("attraction").focus();
+});
+
+$("attraction").addEventListener("change", configureAttraction);
+$("name").addEventListener("blur", () => { lockName(); updateSaveButton(); });
+$("countrySearch").addEventListener("input", () => populateCountries($("countrySearch").value));
+$("information").addEventListener("change", () => {
+  show($("otherField"), $("information").value === "Outros");
+  updateSaveButton();
+});
+
+document.querySelectorAll('input[name="attendanceType"], input[name="nationality"]').forEach((input) => {
+  input.addEventListener("change", () => { configureOrigin(); updateSaveButton(); });
+});
+["country", "state", "otherInformation", "groupSize", "notes"].forEach((id) => {
+  $(id).addEventListener("input", updateSaveButton);
+  $(id).addEventListener("change", updateSaveButton);
+});
+
+$("syncNow").addEventListener("click", synchronize);
+window.addEventListener("online", () => { updateStatus(); refreshOptions(); synchronize(); });
+window.addEventListener("offline", updateStatus);
+
+(async () => {
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js");
+  $("name").value = await readValue(PREFERENCES_STORE, "nome") || "";
+  if ($("name").value) lockName();
+  savedAttraction = await readValue(PREFERENCES_STORE, "atrativo") || localStorage.getItem("atrativo") || "";
+  if (savedAttraction) await writeValue(PREFERENCES_STORE, savedAttraction, "atrativo");
+  options = await readValue(OPTIONS_STORE, "atual");
+  renderOptions();
+  updateStatus();
+  refreshOptions();
+  synchronize();
+})();
