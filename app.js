@@ -10,6 +10,7 @@ let syncing = false;
 let savedAttraction = "";
 let retryTimer;
 let editingIdentification = false;
+const RENAMED_ATTRACTIONS = { "Torre Panorâmica": "Torre Panorâmica (Recepção)" };
 
 const db = new Promise((resolve, reject) => {
   const request = indexedDB.open(DB_NAME, 3);
@@ -76,6 +77,10 @@ function setMessage(text = "", isError = false) {
 
 function currentAttraction() {
   return options?.atrativos?.[$("attraction").value];
+}
+
+function requiresInformation(config) {
+  return config?.solicitaInformacao !== false;
 }
 
 function populateSelect(element, values, placeholder) {
@@ -182,13 +187,24 @@ function configureAttraction() {
   const config = currentAttraction();
   if (!config) {
     $("information").disabled = true;
+    $("information").required = false;
+    show($("informationField"), false);
+    show($("otherField"), false);
+    show($("groupField"), false);
+    $("groupSize").required = false;
     renderIdentification();
     updateSaveButton();
     return;
   }
 
   populateInformation(config);
-  $("information").disabled = false;
+  const informationRequired = requiresInformation(config);
+  $("information").disabled = !informationRequired;
+  $("information").required = informationRequired;
+  $("information").value = "";
+  $("otherInformation").value = "";
+  show($("informationField"), informationRequired);
+  show($("otherField"), false);
   show($("groupField"), config.permiteGrupo);
   $("groupSize").required = config.permiteGrupo;
   savedAttraction = $("attraction").value;
@@ -201,7 +217,8 @@ function configureAttraction() {
 
 function renderOptions() {
   if (!options) return;
-  const attractionToRestore = $("attraction").value || savedAttraction;
+  const savedValue = $("attraction").value || savedAttraction;
+  const attractionToRestore = options.atrativos[savedValue] ? savedValue : (RENAMED_ATTRACTIONS[savedValue] || savedValue);
   populateSelect($("attraction"), Object.keys(options.atrativos), "Selecione o atrativo");
   populateSelect($("state"), options.estados, "Selecione o estado");
   populateCountries();
@@ -209,6 +226,7 @@ function renderOptions() {
 
   if (options.atrativos[attractionToRestore]) {
     $("attraction").value = attractionToRestore;
+    savedAttraction = attractionToRestore;
     configureAttraction();
   } else {
     renderIdentification();
@@ -223,6 +241,7 @@ function updateSaveButton() {
   const brazilian = nationality === "Brasileiro";
   const needsState = cityRegion || brazilian;
   const groupSize = Number($("groupSize").value);
+  const informationRequired = requiresInformation(config);
   const ready = Boolean(
     config &&
     $("name").value.trim() &&
@@ -230,8 +249,10 @@ function updateSaveButton() {
     (cityRegion || nationality) &&
     $("country").value &&
     (!needsState || $("state").value) &&
-    $("information").value &&
-    ($("information").value !== "Outros" || $("otherInformation").value.trim()) &&
+    (!informationRequired || (
+      $("information").value &&
+      ($("information").value !== "Outros" || $("otherInformation").value.trim())
+    )) &&
     (!config.permiteGrupo || (Number.isInteger(groupSize) && groupSize >= 1 && groupSize <= 100))
   );
   $("save").disabled = !ready;
