@@ -10,6 +10,7 @@ let syncing = false;
 let savedAttraction = "";
 let retryTimer;
 let editingIdentification = false;
+let selectedInformationItems = [];
 const RENAMED_ATTRACTIONS = { "Torre Panorâmica": "Torre Panorâmica (Recepção)" };
 
 const db = new Promise((resolve, reject) => {
@@ -99,13 +100,79 @@ function populateInformation(config) {
   });
 }
 
-function populateCountries(filter = "") {
-  const selectedCountry = $("country").value;
+function matchingCountries(filter = "") {
   const text = normalize(filter);
-  const countries = (options?.paises || []).filter((country) => normalize(country).includes(text));
-  populateSelect($("country"), countries, "");
-  if (text && countries.length) $("country").value = countries[0];
-  else if (countries.includes(selectedCountry)) $("country").value = selectedCountry;
+  return (options?.paises || []).filter((country) => normalize(country).includes(text));
+}
+
+function hideCountrySuggestions() {
+  show($("countrySuggestions"), false);
+  $("country").setAttribute("aria-expanded", "false");
+}
+
+function setCountry(country) {
+  $("country").value = country;
+  hideCountrySuggestions();
+  updateSaveButton();
+}
+
+function renderCountrySuggestions() {
+  const input = $("country");
+  const suggestions = $("countrySuggestions");
+  const countries = matchingCountries(input.value);
+  suggestions.replaceChildren();
+
+  if (input.disabled || !input.value.trim() || !countries.length) return hideCountrySuggestions();
+  countries.forEach((country) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "suggestion";
+    option.role = "option";
+    option.textContent = country;
+    option.addEventListener("click", () => setCountry(country));
+    suggestions.append(option);
+  });
+  show(suggestions, true);
+  input.setAttribute("aria-expanded", "true");
+}
+
+function renderSelectedInformations() {
+  const container = $("selectedInformations");
+  container.replaceChildren();
+  selectedInformationItems.forEach((item, index) => {
+    const tag = document.createElement("span");
+    tag.className = "information-tag";
+    tag.append(document.createTextNode(item.informacao === "Outros" ? `Outros: ${item.informacaoOutro}` : item.informacao));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove-information";
+    remove.dataset.index = String(index);
+    remove.setAttribute("aria-label", `Remover ${item.informacao}`);
+    remove.textContent = "×";
+    tag.append(remove);
+    container.append(tag);
+  });
+}
+
+function addSelectedInformation() {
+  const information = $("information").value;
+  const otherInformation = $("otherInformation").value.trim();
+  if (!information) return setMessage("Selecione uma informação para adicionar.", true);
+  if (information === "Outros" && !otherInformation) {
+    show($("otherField"), true);
+    $("otherInformation").focus();
+    return setMessage("Descreva a outra informação antes de adicionar.", true);
+  }
+  if (selectedInformationItems.some((item) => item.informacao === information)) {
+    return setMessage("Esta informação já foi adicionada.", true);
+  }
+  selectedInformationItems.push({ informacao: information, informacaoOutro: information === "Outros" ? otherInformation : "" });
+  $("information").value = "";
+  $("otherInformation").value = "";
+  show($("otherField"), false);
+  renderSelectedInformations();
+  setMessage();
+  updateSaveButton();
 }
 
 function show(element, visible) {
@@ -150,9 +217,7 @@ function configureOrigin() {
   if (cityRegion) {
     document.querySelector('input[name="nationality"][value="Brasileiro"]').checked = true;
     nationality = "Brasileiro";
-    $("countrySearch").value = "";
-    populateCountries();
-    $("country").value = "Brasil";
+    setCountry("Brasil");
     $("state").value = "Paraná";
     $("automaticOrigin").textContent = "Origem definida automaticamente: Brasil · Paraná.";
   }
@@ -164,7 +229,6 @@ function configureOrigin() {
   show($("originFields"), visitor && Boolean(nationality));
   show($("automaticOrigin"), cityRegion);
 
-  show($("countrySearch"), foreign);
   show($("stateField"), cityRegion || brazilian);
   show($("countryField"), visitor);
 
@@ -172,16 +236,16 @@ function configureOrigin() {
   $("state").disabled = !(cityRegion || brazilian);
 
   if (brazilian) {
-    $("countrySearch").value = "";
-    populateCountries();
-    $("country").value = "Brasil";
+    setCountry("Brasil");
   }
   if (!visitor && !cityRegion) {
-    $("countrySearch").value = "";
-    $("country").value = "";
+    setCountry("");
     $("state").value = "";
   }
-  if (foreign) $("state").value = "";
+  if (foreign) {
+    if ($("country").value === "Brasil") setCountry("");
+    $("state").value = "";
+  }
 }
 
 function configureAttraction() {
@@ -189,6 +253,9 @@ function configureAttraction() {
   if (!config) {
     $("information").disabled = true;
     $("information").required = false;
+    $("addInformation").disabled = true;
+    selectedInformationItems = [];
+    renderSelectedInformations();
     show($("informationField"), false);
     show($("otherField"), false);
     show($("groupField"), false);
@@ -201,9 +268,12 @@ function configureAttraction() {
   populateInformation(config);
   const informationRequired = requiresInformation(config);
   $("information").disabled = !informationRequired;
-  $("information").required = informationRequired;
+  $("information").required = false;
+  $("addInformation").disabled = !informationRequired;
   $("information").value = "";
   $("otherInformation").value = "";
+  selectedInformationItems = [];
+  renderSelectedInformations();
   show($("informationField"), informationRequired);
   show($("otherField"), false);
   show($("groupField"), config.permiteGrupo);
@@ -222,7 +292,6 @@ function renderOptions() {
   const attractionToRestore = options.atrativos[savedValue] ? savedValue : (RENAMED_ATTRACTIONS[savedValue] || savedValue);
   populateSelect($("attraction"), Object.keys(options.atrativos), "Selecione o atrativo");
   populateSelect($("state"), options.estados, "Selecione o estado");
-  populateCountries();
   $("attraction").disabled = false;
 
   if (options.atrativos[attractionToRestore]) {
@@ -243,17 +312,15 @@ function updateSaveButton() {
   const needsState = cityRegion || brazilian;
   const groupSize = Number($("groupSize").value);
   const informationRequired = requiresInformation(config);
+  const countryIsValid = (options?.paises || []).includes($("country").value);
   const ready = Boolean(
     config &&
     $("name").value.trim() &&
     type &&
     (cityRegion || nationality) &&
-    $("country").value &&
+    countryIsValid &&
     (!needsState || $("state").value) &&
-    (!informationRequired || (
-      $("information").value &&
-      ($("information").value !== "Outros" || $("otherInformation").value.trim())
-    )) &&
+    (!informationRequired || selectedInformationItems.length) &&
     (!config.permiteGrupo || (Number.isInteger(groupSize) && groupSize >= 1 && groupSize <= 100))
   );
   $("save").disabled = !ready;
@@ -370,8 +437,7 @@ function formData() {
     nacionalidade: selected("nationality"),
     paisOrigem: $("country").value,
     estadoOrigem: $("state").value,
-    informacao: $("information").value,
-    informacaoOutro: $("otherInformation").value.trim(),
+    informacoes: selectedInformationItems.map((item) => ({ ...item })),
     quantidadeGrupo: $("groupSize").value,
     observacoes: $("notes").value.trim()
   };
@@ -383,8 +449,7 @@ function resetForNextAttendance(name, attraction) {
   $("name").value = name;
   $("attraction").value = attraction;
   configureAttraction();
-  $("countrySearch").value = "";
-  populateCountries();
+  hideCountrySuggestions();
   setMessage();
   updateSaveButton();
 }
@@ -418,18 +483,27 @@ $("changeIdentification").addEventListener("click", () => {
 
 $("attraction").addEventListener("change", configureAttraction);
 $("name").addEventListener("blur", () => { lockName(); updateSaveButton(); });
-$("countrySearch").addEventListener("input", () => populateCountries($("countrySearch").value));
+$("country").addEventListener("input", () => { renderCountrySuggestions(); updateSaveButton(); });
+$("country").addEventListener("blur", () => window.setTimeout(hideCountrySuggestions, 150));
+$("country").addEventListener("keydown", (event) => { if (event.key === "Escape") hideCountrySuggestions(); });
 $("information").addEventListener("change", () => {
   const isOther = $("information").value === "Outros";
   show($("otherField"), isOther);
   if (!isOther) $("otherInformation").value = "";
+});
+$("addInformation").addEventListener("click", addSelectedInformation);
+$("selectedInformations").addEventListener("click", (event) => {
+  const remove = event.target.closest("button[data-index]");
+  if (!remove) return;
+  selectedInformationItems.splice(Number(remove.dataset.index), 1);
+  renderSelectedInformations();
   updateSaveButton();
 });
 
 document.querySelectorAll('input[name="attendanceType"], input[name="nationality"]').forEach((input) => {
   input.addEventListener("change", () => { configureOrigin(); updateSaveButton(); });
 });
-["country", "state", "otherInformation", "groupSize", "notes"].forEach((id) => {
+["state", "otherInformation", "groupSize", "notes"].forEach((id) => {
   $(id).addEventListener("input", updateSaveButton);
   $(id).addEventListener("change", updateSaveButton);
 });
