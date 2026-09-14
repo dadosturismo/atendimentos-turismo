@@ -103,8 +103,9 @@ function populateCountries(filter = "") {
   const selectedCountry = $("country").value;
   const text = normalize(filter);
   const countries = (options?.paises || []).filter((country) => normalize(country).includes(text));
-  populateSelect($("country"), countries);
-  if (countries.includes(selectedCountry)) $("country").value = selectedCountry;
+  populateSelect($("country"), countries, "");
+  if (text && countries.length) $("country").value = countries[0];
+  else if (countries.includes(selectedCountry)) $("country").value = selectedCountry;
 }
 
 function show(element, visible) {
