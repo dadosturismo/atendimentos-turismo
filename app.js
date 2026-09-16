@@ -253,7 +253,6 @@ function configureAttraction() {
   if (!config) {
     $("information").disabled = true;
     $("information").required = false;
-    $("addInformation").disabled = true;
     selectedInformationItems = [];
     renderSelectedInformations();
     show($("informationField"), false);
@@ -269,7 +268,6 @@ function configureAttraction() {
   const informationRequired = requiresInformation(config);
   $("information").disabled = !informationRequired;
   $("information").required = false;
-  $("addInformation").disabled = !informationRequired;
   $("information").value = "";
   $("otherInformation").value = "";
   selectedInformationItems = [];
@@ -489,9 +487,18 @@ $("country").addEventListener("keydown", (event) => { if (event.key === "Escape"
 $("information").addEventListener("change", () => {
   const isOther = $("information").value === "Outros";
   show($("otherField"), isOther);
-  if (!isOther) $("otherInformation").value = "";
+  if (isOther) return $("otherInformation").focus();
+  $("otherInformation").value = "";
+  addSelectedInformation();
 });
-$("addInformation").addEventListener("click", addSelectedInformation);
+$("otherInformation").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  addSelectedInformation();
+});
+$("otherInformation").addEventListener("blur", () => {
+  if ($("information").value === "Outros" && $("otherInformation").value.trim()) addSelectedInformation();
+});
 $("selectedInformations").addEventListener("click", (event) => {
   const remove = event.target.closest("button[data-index]");
   if (!remove) return;
