@@ -129,6 +129,10 @@ function renderCountrySuggestions() {
     option.className = "suggestion";
     option.role = "option";
     option.textContent = country;
+    option.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      setCountry(country);
+    });
     option.addEventListener("click", () => setCountry(country));
     suggestions.append(option);
   });
