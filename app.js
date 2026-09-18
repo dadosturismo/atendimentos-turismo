@@ -222,7 +222,7 @@ function configureOrigin() {
     document.querySelector('input[name="nationality"][value="Brasileiro"]').checked = true;
     nationality = "Brasileiro";
     setCountry("Brasil");
-    $("state").value = "Paraná";
+    $("state").value = "Curitiba e Região Metropolitana";
     $("automaticOrigin").textContent = "Origem definida automaticamente: Brasil · Paraná.";
   }
 
