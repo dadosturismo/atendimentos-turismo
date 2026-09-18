@@ -212,6 +212,28 @@ function lockName() {
   renderIdentification();
 }
 
+function setAutomaticCityRegionState(enabled) {
+  const state = $("state");
+  const existingOption = state.querySelector('option[data-automatic-city-region]');
+  const value = "Curitiba e Região Metropolitana";
+
+  if (enabled) {
+    if (!existingOption) {
+      const option = new Option(value, value);
+      option.dataset.automaticCityRegion = "true";
+      state.add(option);
+    }
+    state.value = value;
+    return;
+  }
+
+  if (existingOption) {
+    const wasSelected = state.value === value;
+    existingOption.remove();
+    if (wasSelected) state.value = "";
+  }
+}
+
 function configureOrigin() {
   const type = selected("attendanceType");
   const cityRegion = type === "Curitiba e Região Metropolitana";
@@ -222,8 +244,10 @@ function configureOrigin() {
     document.querySelector('input[name="nationality"][value="Brasileiro"]').checked = true;
     nationality = "Brasileiro";
     setCountry("Brasil");
-    $("state").value = "Curitiba e Região Metropolitana";
+    setAutomaticCityRegionState(true);
     $("automaticOrigin").textContent = "Origem definida automaticamente: Brasil · Paraná.";
+  } else {
+    setAutomaticCityRegionState(false);
   }
 
   const brazilian = nationality === "Brasileiro";
