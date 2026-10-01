@@ -1,17 +1,25 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzB6GSofhvuFJhuml3XjhSjb1z8nmAogVMSnEVC58LWhdm1giwMrQ9ZLHLfGmKbrGAb/exec";
-const DB_NAME = "turismo-atendimentos-v3";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxWamWQao1eQXOYOrH0mDIl2QyEmQqE75UVit36eptNhIF0Ju87qwNNfgk9DGdWJAP5/exec";
+const DB_NAME = "turismo-atendimentos-v4";
 const QUEUE_STORE = "pendentes";
 const OPTIONS_STORE = "opcoes";
 const PREFERENCES_STORE = "preferencias";
+const SESSION_TOKEN_KEY = "cturAtendimentosSessionToken";
+const SESSION_USER_KEY = "cturAtendimentosSessionUser";
 const $ = (id) => document.getElementById(id);
 
 let options;
+let sessionToken = localStorage.getItem(SESSION_TOKEN_KEY) || "";
+let sessionUser = localStorage.getItem(SESSION_USER_KEY) || "";
 let syncing = false;
 let savedAttraction = "";
 let retryTimer;
 let editingIdentification = false;
 let selectedInformationItems = [];
 const RENAMED_ATTRACTIONS = { "Torre Panorâmica": "Torre Panorâmica (Recepção)" };
+const ATRATIVOS_FORCADOS_POR_USUARIO = {
+  adminTORRE: ["Torre Panorâmica (Recepção)"],
+  adminTORREELEVADOR: ["Torre Panorâmica (Elevador)"]
+};
 
 const db = new Promise((resolve, reject) => {
   const request = indexedDB.open(DB_NAME, 3);
@@ -314,11 +322,24 @@ function configureAttraction() {
 
 function renderOptions() {
   if (!options) return;
+  const forcedAttractions = ATRATIVOS_FORCADOS_POR_USUARIO[sessionUser];
+  const permittedAttractions = (forcedAttractions || Object.keys(options.atrativos))
+    .filter((attraction) => Boolean(options.atrativos[attraction]));
   const savedValue = $("attraction").value || savedAttraction;
   const attractionToRestore = options.atrativos[savedValue] ? savedValue : (RENAMED_ATTRACTIONS[savedValue] || savedValue);
-  populateSelect($("attraction"), Object.keys(options.atrativos), "Selecione o atrativo");
+  populateSelect($("attraction"), permittedAttractions, "Selecione o atrativo");
   populateSelect($("state"), options.estados, "Selecione o estado");
-  $("attraction").disabled = false;
+  const hasOnlyOneAttraction = permittedAttractions.length === 1;
+  show($("attractionField"), !hasOnlyOneAttraction);
+  $("attraction").disabled = hasOnlyOneAttraction;
+  $("attraction").required = !hasOnlyOneAttraction;
+
+  if (hasOnlyOneAttraction) {
+    $("attraction").value = permittedAttractions[0];
+    savedAttraction = permittedAttractions[0];
+    configureAttraction();
+    return;
+  }
 
   if (options.atrativos[attractionToRestore]) {
     $("attraction").value = attractionToRestore;
@@ -382,7 +403,7 @@ function rpc(action, payload) {
     form.method = "POST";
     form.action = GAS_URL;
     form.target = "bridge";
-    [["action", action], ["payload", encodePayload(payload || {})], ["origin", location.origin], ["nonce", nonce]].forEach(([name, value]) => {
+    [["action", action], ["payload", encodePayload(payload || {})], ["origin", location.origin], ["nonce", nonce], ["token", sessionToken]].forEach(([name, value]) => {
       const input = document.createElement("input");
       input.type = "hidden";
       input.name = name;
@@ -396,12 +417,121 @@ function rpc(action, payload) {
 }
 
 async function refreshOptions() {
+  const response = await rpc("opcoes", {});
+  options = response.opcoes;
+  sessionUser = options.usuario || sessionUser;
+  localStorage.setItem(SESSION_USER_KEY, sessionUser);
+  await writeValue(OPTIONS_STORE, { usuario: sessionUser, opcoes: options }, "atual");
+  renderOptions();
+  return options;
+}
+
+function setLoginMessage(text = "", isError = false) {
+  $("loginMessage").textContent = text;
+  $("loginMessage").classList.toggle("error", isError);
+}
+
+function isSessionError(error) {
+  return /sessão inválida|sessão expirada/i.test(String(error?.message || error || ""));
+}
+
+function showLogin(message = "", isError = false) {
+  show($("loginScreen"), true);
+  show($("appShell"), false);
+  show($("sessionBar"), false);
+  setLoginMessage(message, isError);
+}
+
+async function restoreSavedFormPreferences() {
+  $("name").value = await readValue(PREFERENCES_STORE, "nome") || "";
+  if ($("name").value) lockName();
+  savedAttraction = await readValue(PREFERENCES_STORE, "atrativo") || localStorage.getItem("atrativo") || "";
+  if (savedAttraction) await writeValue(PREFERENCES_STORE, savedAttraction, "atrativo");
+}
+
+async function enterAuthenticatedApp(currentOptions, restorePreferences = false) {
+  options = currentOptions;
+  sessionUser = options.usuario || sessionUser;
+  localStorage.setItem(SESSION_USER_KEY, sessionUser);
+  $("sessionUser").textContent = `Acesso: ${sessionUser}`;
+  show($("loginScreen"), false);
+  show($("appShell"), true);
+  show($("sessionBar"), true);
+  if (restorePreferences) await restoreSavedFormPreferences();
+  renderOptions();
+  await updateStatus();
+  synchronize();
+}
+
+function clearLocalSession() {
+  sessionToken = "";
+  sessionUser = "";
+  options = undefined;
+  syncing = false;
+  editingIdentification = false;
+  selectedInformationItems = [];
+  localStorage.removeItem(SESSION_TOKEN_KEY);
+  localStorage.removeItem(SESSION_USER_KEY);
+  $("form").reset();
+  $("formScreen").classList.remove("hidden");
+  $("successScreen").classList.add("hidden");
+}
+
+async function restoreAuthenticatedSession() {
+  if (!sessionToken || !sessionUser) return showLogin();
+  const cached = await readValue(OPTIONS_STORE, "atual");
+  const cachedOptions = cached?.usuario === sessionUser ? cached.opcoes : null;
+  if (!navigator.onLine) {
+    if (!cachedOptions) return showLogin("Conecte este dispositivo à internet para validar o acesso pela primeira vez.", true);
+    await enterAuthenticatedApp(cachedOptions, true);
+    setMessage("Você está offline. O acesso será validado quando a conexão voltar.", true);
+    return;
+  }
   try {
-    options = (await rpc("opcoes", {})).opcoes;
-    await writeValue(OPTIONS_STORE, options, "atual");
-    renderOptions();
+    const response = await rpc("opcoes", {});
+    await enterAuthenticatedApp(response.opcoes, true);
+    await writeValue(OPTIONS_STORE, { usuario: sessionUser, opcoes: options }, "atual");
   } catch (error) {
-    if (!options) setMessage("Sem opções locais. Conecte este dispositivo uma vez à internet.", true);
+    clearLocalSession();
+    showLogin(error.message || "Não foi possível validar o acesso.", true);
+  }
+}
+
+async function submitLogin(event) {
+  event.preventDefault();
+  const login = $("login").value.trim();
+  const senha = $("password").value;
+  if (!login || !senha) return setLoginMessage("Informe login e senha.", true);
+  const button = $("loginSubmit");
+  button.disabled = true;
+  setLoginMessage();
+  try {
+    const response = await rpc("login", { login, senha });
+    const session = response.dados;
+    sessionToken = session.token;
+    sessionUser = session.usuario;
+    localStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
+    localStorage.setItem(SESSION_USER_KEY, sessionUser);
+    $("password").value = "";
+    await writeValue(OPTIONS_STORE, { usuario: sessionUser, opcoes: session.opcoes }, "atual");
+    await enterAuthenticatedApp(session.opcoes, true);
+  } catch (error) {
+    setLoginMessage(error.message || "Não foi possível entrar.", true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function logout() {
+  const token = sessionToken;
+  try {
+    if (token && navigator.onLine) await rpc("logout", {});
+  } catch (_) {
+    // Encerrar localmente continua protegendo o dispositivo mesmo sem conexão.
+  } finally {
+    clearLocalSession();
+    showLogin();
+    $("login").focus();
   }
 }
 
@@ -425,7 +555,7 @@ function scheduleRetry() {
 }
 
 async function synchronize() {
-  if (syncing || !navigator.onLine) return;
+  if (syncing || !navigator.onLine || !sessionToken) return;
   if (retryTimer) {
     window.clearTimeout(retryTimer);
     retryTimer = undefined;
@@ -437,7 +567,12 @@ async function synchronize() {
       try {
         await rpc("sincronizar", record);
         await removePending(record.idEnvio);
-      } catch {
+      } catch (error) {
+        if (isSessionError(error)) {
+          clearLocalSession();
+          showLogin("Sua sessão expirou. Entre novamente para sincronizar os atendimentos pendentes.", true);
+          return;
+        }
         failed = true;
         break;
       }
@@ -507,6 +642,8 @@ $("changeIdentification").addEventListener("click", () => {
   $("attraction").focus();
 });
 
+$("loginForm").addEventListener("submit", submitLogin);
+$("logout").addEventListener("click", logout);
 $("attraction").addEventListener("change", configureAttraction);
 $("name").addEventListener("blur", () => { lockName(); updateSaveButton(); });
 $("country").addEventListener("input", () => { renderCountrySuggestions(); updateSaveButton(); });
@@ -534,7 +671,6 @@ $("selectedInformations").addEventListener("click", (event) => {
   renderSelectedInformations();
   updateSaveButton();
 });
-
 document.querySelectorAll('input[name="attendanceType"], input[name="nationality"]').forEach((input) => {
   input.addEventListener("change", () => { configureOrigin(); updateSaveButton(); });
 });
@@ -544,18 +680,23 @@ document.querySelectorAll('input[name="attendanceType"], input[name="nationality
 });
 
 $("syncNow").addEventListener("click", synchronize);
-window.addEventListener("online", () => { updateStatus(); refreshOptions(); synchronize(); });
+window.addEventListener("online", async () => {
+  if (!sessionToken) return;
+  try {
+    await refreshOptions();
+    await synchronize();
+  } catch (error) {
+    if (isSessionError(error)) {
+      clearLocalSession();
+      showLogin("Sua sessão expirou. Entre novamente.", true);
+    } else {
+      updateStatus();
+    }
+  }
+});
 window.addEventListener("offline", updateStatus);
 
 (async () => {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js");
-  $("name").value = await readValue(PREFERENCES_STORE, "nome") || "";
-  if ($("name").value) lockName();
-  savedAttraction = await readValue(PREFERENCES_STORE, "atrativo") || localStorage.getItem("atrativo") || "";
-  if (savedAttraction) await writeValue(PREFERENCES_STORE, savedAttraction, "atrativo");
-  options = await readValue(OPTIONS_STORE, "atual");
-  renderOptions();
-  updateStatus();
-  refreshOptions();
-  synchronize();
+  await restoreAuthenticatedSession();
 })();
