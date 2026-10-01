@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxWamWQao1eQXOYOrH0mDIl2QyEmQqE75UVit36eptNhIF0Ju87qwNNfgk9DGdWJAP5/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbzB6GSofhvuFJhuml3XjhSjb1z8nmAogVMSnEVC58LWhdm1giwMrQ9ZLHLfGmKbrGAb/exec";
 const DB_NAME = "turismo-atendimentos-v4";
 const QUEUE_STORE = "pendentes";
 const OPTIONS_STORE = "opcoes";
