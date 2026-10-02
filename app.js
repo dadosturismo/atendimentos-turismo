@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzB6GSofhvuFJhuml3XjhSjb1z8nmAogVMSnEVC58LWhdm1giwMrQ9ZLHLfGmKbrGAb/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxWamWQao1eQXOYOrH0mDIl2QyEmQqE75UVit36eptNhIF0Ju87qwNNfgk9DGdWJAP5/exec";
 const DB_NAME = "turismo-atendimentos-v4";
 const QUEUE_STORE = "pendentes";
 const OPTIONS_STORE = "opcoes";
@@ -436,6 +436,7 @@ function isSessionError(error) {
 }
 
 function showLogin(message = "", isError = false) {
+  show($("bootScreen"), false);
   show($("loginScreen"), true);
   show($("appShell"), false);
   show($("sessionBar"), false);
@@ -455,6 +456,7 @@ async function enterAuthenticatedApp(currentOptions, restorePreferences = false)
   localStorage.setItem(SESSION_USER_KEY, sessionUser);
   $("sessionUser").textContent = `Acesso: ${sessionUser}`;
   show($("logout"), sessionUser === "adminCADASTRO");
+  show($("bootScreen"), false);
   show($("loginScreen"), false);
   show($("appShell"), true);
   show($("sessionBar"), true);
