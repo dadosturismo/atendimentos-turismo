@@ -452,6 +452,13 @@ function isSessionError(error) {
   return /sessão inválida|sessão expirada/i.test(String(error?.message || error || ""));
 }
 
+function withTimeout(promise, milliseconds, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => window.setTimeout(() => reject(new Error(message)), milliseconds))
+  ]);
+}
+
 function showLogin(message = "", isError = false) {
   show($("bootScreen"), false);
   show($("loginScreen"), true);
@@ -461,10 +468,18 @@ function showLogin(message = "", isError = false) {
 }
 
 async function restoreSavedFormPreferences() {
-  $("name").value = await readValue(PREFERENCES_STORE, "nome") || "";
+  try {
+    $("name").value = await withTimeout(readValue(PREFERENCES_STORE, "nome"), 8000, "Não foi possível restaurar o nome salvo neste dispositivo.") || "";
+  } catch (_) {
+    $("name").value = "";
+  }
   if ($("name").value) lockName();
-  savedAttraction = await readValue(PREFERENCES_STORE, "atrativo") || localStorage.getItem("atrativo") || "";
-  if (savedAttraction) await writeValue(PREFERENCES_STORE, savedAttraction, "atrativo");
+  try {
+    savedAttraction = await withTimeout(readValue(PREFERENCES_STORE, "atrativo"), 8000, "Não foi possível restaurar o atrativo salvo neste dispositivo.") || localStorage.getItem("atrativo") || "";
+    if (savedAttraction) await withTimeout(writeValue(PREFERENCES_STORE, savedAttraction, "atrativo"), 8000, "Não foi possível salvar o atrativo neste dispositivo.");
+  } catch (_) {
+    savedAttraction = localStorage.getItem("atrativo") || "";
+  }
 }
 
 async function enterAuthenticatedApp(currentOptions, restorePreferences = false) {
@@ -497,22 +512,48 @@ function clearLocalSession() {
   $("successScreen").classList.add("hidden");
 }
 
+async function validateSessionInBackground() {
+  if (!navigator.onLine || !sessionToken) return;
+  try {
+    await refreshOptions();
+    await synchronize();
+  } catch (error) {
+    // Falhas de conexão, portal cativo e timeout não devem desconectar quem já possui dados salvos.
+    if (isSessionError(error)) {
+      clearLocalSession();
+      showLogin("Sua sessão não é mais válida. Entre novamente.", true);
+      return;
+    }
+    updateStatus();
+  }
+}
+
 async function restoreAuthenticatedSession() {
   if (!sessionToken || !sessionUser) return showLogin();
-  const cached = await readValue(OPTIONS_STORE, "atual");
-  const cachedOptions = cached?.usuario === sessionUser ? cached.opcoes : null;
-  if (!navigator.onLine) {
-    if (!cachedOptions) return showLogin("Conecte este dispositivo à internet para validar o acesso pela primeira vez.", true);
+  let cachedOptions = null;
+  try {
+    const cached = await withTimeout(readValue(OPTIONS_STORE, "atual"), 8000, "Não foi possível acessar os dados salvos neste dispositivo.");
+    cachedOptions = cached?.usuario === sessionUser ? cached.opcoes : null;
+  } catch (_) {
+    // Sem cache, o acesso continua possível apenas quando a primeira validação online funcionar.
+  }
+
+  // O cache tem prioridade: evita que um Wi-Fi sem internet ou com portal de login bloqueie a abertura.
+  if (cachedOptions) {
     await enterAuthenticatedApp(cachedOptions, true);
-    setMessage("Você está offline. O acesso será validado quando a conexão voltar.", true);
+    if (!navigator.onLine) setMessage("Você está offline. O acesso será validado quando a conexão voltar.", true);
+    else validateSessionInBackground();
     return;
   }
+
+  if (!navigator.onLine) return showLogin("Conecte este dispositivo à internet para validar o acesso pela primeira vez.", true);
+
   try {
     const response = await rpc("opcoes", {});
     await enterAuthenticatedApp(response.opcoes, true);
     await writeValue(OPTIONS_STORE, { usuario: sessionUser, opcoes: options }, "atual");
   } catch (error) {
-    clearLocalSession();
+    if (isSessionError(error)) clearLocalSession();
     showLogin(error.message || "Não foi possível validar o acesso.", true);
   }
 }
