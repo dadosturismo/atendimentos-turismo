@@ -16,6 +16,7 @@ let retryTimer;
 let editingIdentification = false;
 let selectedInformationItems = [];
 const RENAMED_ATTRACTIONS = { "Torre Panorâmica": "Torre Panorâmica (Recepção)" };
+const COUNTRIES_ADDED_LOCALLY = ["Escócia", "Inglaterra", "País de Gales", "Irlanda do Norte"];
 const ATRATIVOS_FORCADOS_POR_USUARIO = {
   adminTORRE: ["Torre Panorâmica (Recepção)"],
   adminTORREELEVADOR: ["Torre Panorâmica (Elevador)"]
@@ -76,7 +77,16 @@ function selected(name) {
 }
 
 function normalize(text) {
-  return String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return String(text || "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function availableCountries() {
+  return Array.from(new Set([...(options?.paises || []), ...COUNTRIES_ADDED_LOCALLY]));
+}
+
+function canonicalCountry(value) {
+  const typed = normalize(value);
+  return availableCountries().find((country) => normalize(country) === typed) || "";
 }
 
 function setMessage(text = "", isError = false) {
@@ -110,7 +120,7 @@ function populateInformation(config) {
 
 function matchingCountries(filter = "") {
   const text = normalize(filter);
-  return (options?.paises || []).filter((country) => normalize(country).includes(text));
+  return availableCountries().filter((country) => normalize(country).includes(text));
 }
 
 function hideCountrySuggestions() {
@@ -119,7 +129,14 @@ function hideCountrySuggestions() {
 }
 
 function setCountry(country) {
-  $("country").value = country;
+  $("country").value = canonicalCountry(country) || country;
+  hideCountrySuggestions();
+  updateSaveButton();
+}
+
+function commitTypedCountry() {
+  const country = canonicalCountry($("country").value);
+  if (country) $("country").value = country;
   hideCountrySuggestions();
   updateSaveButton();
 }
@@ -359,7 +376,7 @@ function updateSaveButton() {
   const needsState = cityRegion || brazilian;
   const groupSize = Number($("groupSize").value);
   const informationRequired = requiresInformation(config);
-  const countryIsValid = (options?.paises || []).includes($("country").value);
+  const countryIsValid = Boolean(canonicalCountry($("country").value));
   const ready = Boolean(
     config &&
     $("name").value.trim() &&
@@ -599,7 +616,7 @@ function formData() {
     nome: $("name").value.trim(),
     tipoAtendimento: selected("attendanceType"),
     nacionalidade: selected("nationality"),
-    paisOrigem: $("country").value,
+    paisOrigem: canonicalCountry($("country").value),
     estadoOrigem: $("state").value,
     informacoes: selectedInformationItems.map((item) => ({ ...item })),
     quantidadeGrupo: $("groupSize").value,
@@ -650,7 +667,7 @@ $("logout").addEventListener("click", logout);
 $("attraction").addEventListener("change", configureAttraction);
 $("name").addEventListener("blur", () => { lockName(); updateSaveButton(); });
 $("country").addEventListener("input", () => { renderCountrySuggestions(); updateSaveButton(); });
-$("country").addEventListener("blur", () => window.setTimeout(hideCountrySuggestions, 150));
+$("country").addEventListener("blur", () => window.setTimeout(commitTypedCountry, 150));
 $("country").addEventListener("keydown", (event) => { if (event.key === "Escape") hideCountrySuggestions(); });
 $("information").addEventListener("change", () => {
   const isOther = $("information").value === "Outros";
